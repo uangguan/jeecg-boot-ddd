@@ -1,6 +1,7 @@
 package org.jeecg.modules.quartz.controller;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -13,6 +14,7 @@ import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.constant.CommonConstant;
 import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.query.QueryGenerator;
+import org.jeecg.common.util.ImportExcelUtil;
 import org.jeecg.modules.quartz.entity.QuartzJob;
 import org.jeecg.modules.quartz.service.IQuartzJobService;
 import org.jeecgframework.poi.excel.ExcelImportUtil;
@@ -161,17 +163,11 @@ public class QuartzJobController {
 	@ApiOperation(value = "暂停定时任务")
 	public Result<Object> pauseJob(@RequestParam(name = "jobClassName", required = true) String jobClassName) {
 		QuartzJob job = null;
-		try {
-			job = quartzJobService.getOne(new LambdaQueryWrapper<QuartzJob>().eq(QuartzJob::getJobClassName, jobClassName));
-			if (job == null) {
-				return Result.error("定时任务不存在！");
-			}
-			scheduler.pauseJob(JobKey.jobKey(jobClassName.trim()));
-		} catch (SchedulerException e) {
-			throw new JeecgBootException("暂停定时任务失败");
+		job = quartzJobService.getOne(new LambdaQueryWrapper<QuartzJob>().eq(QuartzJob::getJobClassName, jobClassName));
+		if (job == null) {
+			return Result.error("定时任务不存在！");
 		}
-		job.setStatus(CommonConstant.STATUS_DISABLE);
-		quartzJobService.updateById(job);
+		quartzJobService.pause(job);
 		return Result.ok("暂停定时任务成功");
 	}
 
@@ -235,9 +231,12 @@ public class QuartzJobController {
 	 * @return
 	 */
 	@RequestMapping(value = "/importExcel", method = RequestMethod.POST)
-	public Result<?> importExcel(HttpServletRequest request, HttpServletResponse response) {
+	public Result<?> importExcel(HttpServletRequest request, HttpServletResponse response) throws IOException {
 		MultipartHttpServletRequest multipartRequest = (MultipartHttpServletRequest) request;
 		Map<String, MultipartFile> fileMap = multipartRequest.getFileMap();
+		// 错误信息
+		List<String> errorMessage = new ArrayList<>();
+		int successLines = 0, errorLines = 0;
 		for (Map.Entry<String, MultipartFile> entity : fileMap.entrySet()) {
 			MultipartFile file = entity.getValue();// 获取上传文件对象
 			ImportParams params = new ImportParams();
@@ -245,11 +244,10 @@ public class QuartzJobController {
 			params.setHeadRows(1);
 			params.setNeedSave(true);
 			try {
-				List<QuartzJob> listQuartzJobs = ExcelImportUtil.importExcel(file.getInputStream(), QuartzJob.class, params);
-				for (QuartzJob quartzJobExcel : listQuartzJobs) {
-					quartzJobService.save(quartzJobExcel);
-				}
-				return Result.ok("文件导入成功！数据行数：" + listQuartzJobs.size());
+				List<Object> listQuartzJobs = ExcelImportUtil.importExcel(file.getInputStream(), QuartzJob.class, params);
+				List<String> list = ImportExcelUtil.importDateSave(listQuartzJobs, IQuartzJobService.class, errorMessage,CommonConstant.SQL_INDEX_UNIQ_JOB_CLASS_NAME);
+				errorLines+=list.size();
+				successLines+=(listQuartzJobs.size()-errorLines);
 			} catch (Exception e) {
 				log.error(e.getMessage(), e);
 				return Result.error("文件导入失败！");
@@ -261,6 +259,28 @@ public class QuartzJobController {
 				}
 			}
 		}
-		return Result.error("文件导入失败！");
+		return ImportExcelUtil.imporReturnRes(errorLines,successLines,errorMessage);
+	}
+
+	/**
+	 * 立即执行
+	 * @param id
+	 * @return
+	 */
+	@RequiresRoles("admin")
+	@GetMapping("/execute")
+	public Result<?> execute(@RequestParam(name = "id", required = true) String id) {
+		QuartzJob quartzJob = quartzJobService.getById(id);
+		if (quartzJob == null) {
+			return Result.error("未找到对应实体");
+		}
+		try {
+			quartzJobService.execute(quartzJob);
+		} catch (Exception e) {
+			//e.printStackTrace();
+			log.info("定时任务 立即执行失败>>"+e.getMessage());
+			return Result.error("执行失败!");
+		}
+		return Result.ok("执行成功!");
 	}
 }

@@ -7,7 +7,7 @@
     :closable="true"
     @close="handleCancel"
     :visible="visible"
-    style="height: calc(100% - 55px);overflow: auto;padding-bottom: 53px;">
+    style="height: 100%;overflow: auto;padding-bottom: 53px;">
 
     <template slot="title">
       <div style="width: 100%;">
@@ -23,12 +23,12 @@
       <a-form :form="form">
 
         <a-form-item label="用户账号" :labelCol="labelCol" :wrapperCol="wrapperCol">
-          <a-input placeholder="请输入用户账号" v-decorator="[ 'username', validatorRules.username]" :readOnly="!!model.id"/>
+          <a-input placeholder="请输入用户账号" v-decorator.trim="[ 'username', validatorRules.username]" :readOnly="!!model.id"/>
         </a-form-item>
 
         <template v-if="!model.id">
           <a-form-item label="登陆密码" :labelCol="labelCol" :wrapperCol="wrapperCol" >
-            <a-input type="password" placeholder="请输入登陆密码" v-decorator="[ 'password', validatorRules.password]" />
+            <a-input type="password" placeholder="请输入登陆密码" v-decorator="[ 'password']" />
           </a-form-item>
 
           <a-form-item label="确认密码" :labelCol="labelCol" :wrapperCol="wrapperCol" >
@@ -37,11 +37,11 @@
         </template>
 
         <a-form-item label="用户姓名" :labelCol="labelCol" :wrapperCol="wrapperCol" >
-          <a-input placeholder="请输入用户姓名" v-decorator="[ 'realname', validatorRules.realname]" />
+          <a-input placeholder="请输入用户姓名" v-decorator.trim="[ 'realname', validatorRules.realname]" />
         </a-form-item>
 
         <a-form-item label="工号" :labelCol="labelCol" :wrapperCol="wrapperCol">
-          <a-input placeholder="请输入工号" v-decorator="[ 'workNo', validatorRules.workNo]" />
+          <a-input placeholder="请输入工号" v-decorator.trim="[ 'workNo', validatorRules.workNo]" />
         </a-form-item>
 
         <a-form-item label="职务" :labelCol="labelCol" :wrapperCol="wrapperCol">
@@ -54,7 +54,8 @@
             style="width: 100%"
             placeholder="请选择用户角色"
             optionFilterProp = "children"
-            v-model="selectedRole">
+            v-model="selectedRole"
+            :getPopupContainer= "(target) => target.parentNode">
             <a-select-option v-for="(role,roleindex) in roleList" :key="roleindex.toString()" :value="role.id">
               {{ role.roleName }}
             </a-select-option>
@@ -64,13 +65,29 @@
         <!--部门分配-->
         <a-form-item label="部门分配" :labelCol="labelCol" :wrapperCol="wrapperCol" v-show="!departDisabled">
           <a-input-search
-            placeholder="点击右侧按钮选择部门"
+            placeholder="点击选择部门"
             v-model="checkedDepartNameString"
-            disabled
+            readOnly
             @search="onSearch">
             <a-button slot="enterButton" icon="search">选择</a-button>
           </a-input-search>
         </a-form-item>
+
+        <!--租户分配-->
+        <a-form-item label="租户分配" :labelCol="labelCol" :wrapperCol="wrapperCol" v-show="!departDisabled">
+
+          <a-select
+            mode="multiple"
+            style="width: 100%"
+            placeholder="请选择租户分配"
+            :disabled="disableSubmit"
+            v-model="currentTenant">
+            <a-select-option v-for="(item, index) in tenantList" :key="index" :value="item.id">
+              {{ item.name }}
+            </a-select-option>
+          </a-select>
+        </a-form-item>
+
        <!-- update--begin--autor:wangshuai-----date:20200108------for：新增身份和负责部门------ -->
         <a-form-item label="身份" :labelCol="labelCol" :wrapperCol="wrapperCol">
           <a-radio-group
@@ -104,11 +121,12 @@
           <a-date-picker
             style="width: 100%"
             placeholder="请选择生日"
-            v-decorator="['birthday', {initialValue:!model.birthday?null:moment(model.birthday,dateFormat)}]"/>
+            v-decorator="['birthday', {initialValue:!model.birthday?null:moment(model.birthday,dateFormat)}]"
+            :getCalendarContainer="node => node.parentNode"/>
         </a-form-item>
 
         <a-form-item label="性别" :labelCol="labelCol" :wrapperCol="wrapperCol">
-          <a-select v-decorator="[ 'sex', {}]" placeholder="请选择性别">
+          <a-select v-decorator="[ 'sex', {}]" placeholder="请选择性别" :getPopupContainer= "(target) => target.parentNode">
             <a-select-option :value="1">男</a-select-option>
             <a-select-option :value="2">女</a-select-option>
           </a-select>
@@ -248,18 +266,21 @@
         picUrl: "",
         url: {
           fileUpload: window._CONFIG['domianURL']+"/sys/common/upload",
-          imgerver: window._CONFIG['staticDomainURL'],
           userWithDepart: "/sys/user/userDepartList", // 引入为指定用户查看部门信息需要的url
           userId:"/sys/user/generateUserId", // 引入生成添加用户情况下的url
           syncUserByUserName:"/process/extActProcess/doSyncUserByUserName",//同步用户到工作流
+          queryTenantList: '/sys/tenant/queryList'
         },
         identity:"1",
         fileList:[],
+        tenantList: [],
+        currentTenant:[]
       }
     },
     created () {
       const token = Vue.ls.get(ACCESS_TOKEN);
       this.headers = {"X-Access-Token":token}
+      this.initTenantList()
 
     },
     computed:{
@@ -270,6 +291,13 @@
     methods: {
       isDisabledAuth(code){
         return disabledAuthFilter(code);
+      },
+      initTenantList(){
+        getAction(this.url.queryTenantList).then(res=>{
+          if(res.success){
+            this.tenantList = res.result
+          }
+        })
       },
       //窗口最大化切换
       toggleScreen(){
@@ -307,6 +335,7 @@
           this.resultDepartOptions=[];
           this.departId=[];
           this.departIdShow=false;
+          this.currentTenant = []
       },
       add () {
         this.picUrl = "";
@@ -332,7 +361,7 @@
           that.form.setFieldsValue(pick(this.model,'username','sex','realname','email','phone','activitiSync','workNo','telephone','post'))
         });
         //身份为上级显示负责部门，否则不显示
-        if(this.model.identity=="2"){
+        if(this.model.userIdentity=="2"){
             this.identity="2";
             this.departIdShow=true;
         }else{
@@ -342,6 +371,14 @@
         // 调用查询用户对应的部门信息的方法
         that.checkedDepartKeys = [];
         that.loadCheckedDeparts();
+
+        //update-begin-author:taoyan date:2020710 for:多租户配置
+        if(!record.relTenantIds || record.relTenantIds.length==0){
+          this.currentTenant = []
+        }else{
+          this.currentTenant = record.relTenantIds.split(',').map(Number);
+        }
+        //update-end-author:taoyan date:2020710 for:多租户配置
       },
       //
       loadCheckedDeparts(){
@@ -406,10 +443,17 @@
               values.birthday = values.birthday.format(this.dateFormat);
             }
             let formData = Object.assign(this.model, values);
-            formData.avatar = that.fileList;
+            if(that.fileList != ''){
+              formData.avatar = that.fileList;
+            }else{
+              formData.avatar = null;
+            }
+            //update-begin-author:taoyan date:2020710 for:多租户配置
+            formData.relTenantIds = this.currentTenant.length>0?this.currentTenant.join(','):''
+            //update-end-author:taoyan date:2020710 for:多租户配置
             formData.selectedroles = this.selectedRole.length>0?this.selectedRole.join(","):'';
             formData.selecteddeparts = this.userDepartModel.departIdList.length>0?this.userDepartModel.departIdList.join(","):'';
-            formData.identity=this.identity;
+            formData.userIdentity=this.identity;
             //如果是上级择传入departIds,否则为空
             if(this.identity==="2"){
               formData.departIds=this.departIds.join(",");

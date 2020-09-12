@@ -1,26 +1,28 @@
 <template>
   <a-card :bordered="false">
     <template v-if="this.departId">
-      <a-form>
-        <a-form-item label='所拥有的权限'>
-          <a-tree
-            checkable
-            @check="onCheck"
-            :checkedKeys="checkedKeys"
-            :treeData="treeData"
-            @expand="onExpand"
-            @select="onTreeNodeSelect"
-            :selectedKeys="selectedKeys"
-            :expandedKeys="expandedKeysss"
-            :checkStrictly="checkStrictly"
-            style="height:500px;overflow: auto;">
-            <span slot="hasDatarule" slot-scope="{slotTitle,ruleFlag}">
-              {{ slotTitle }}
-              <a-icon v-if="ruleFlag" type="align-left" style="margin-left:5px;color: red;"></a-icon>
-            </span>
-          </a-tree>
-        </a-form-item>
-      </a-form>
+      <a-spin :spinning="loading">
+        <a-form>
+          <a-form-item label='所拥有的权限'>
+            <a-tree
+              checkable
+              @check="onCheck"
+              :checkedKeys="checkedKeys"
+              :treeData="treeData"
+              @expand="onExpand"
+              @select="onTreeNodeSelect"
+              :selectedKeys="selectedKeys"
+              :expandedKeys="expandedKeysss"
+              :checkStrictly="checkStrictly"
+              style="height:500px;overflow: auto;">
+              <span slot="hasDatarule" slot-scope="{slotTitle,ruleFlag}">
+                {{ slotTitle }}
+                <a-icon v-if="ruleFlag" type="align-left" style="margin-left:5px;color: red;"></a-icon>
+              </span>
+            </a-tree>
+          </a-form-item>
+        </a-form>
+      </a-spin>
       <div class="anty-form-btn">
         <a-dropdown style="float: left" :trigger="['click']" placement="topCenter">
           <a-menu slot="overlay">
@@ -40,7 +42,11 @@
         <a-button style="float: right" @click="handleSubmit" type="primary" htmlType="button" icon="form">保存</a-button>
       </div>
     </template>
-    <div v-else style="height:330px;"><h3>请先选择一个部门!</h3></div>
+    <a-card v-else :bordered="false" style="height:200px">
+      <a-empty>
+        <span slot="description"> 请先选择一个部门! </span>
+      </a-empty>
+    </a-card>
     <depart-datarule-modal ref="datarule"/>
   </a-card>
 </template>
@@ -152,6 +158,7 @@
         this.form.resetFields()
       },
       loadData(){
+        this.loading = true;
         queryTreeListForRole().then((res) => {
           this.treeData = res.result.treeList
           this.allTreeKeys = res.result.ids
@@ -172,6 +179,7 @@
             this.halfCheckedKeys = [...halfCheckedKeys]
             this.defaultCheckedKeys = [...halfCheckedKeys, ...checkedKeys];
             this.expandedKeysss = this.allTreeKeys;
+            this.loading = false;
           })
         })
       }

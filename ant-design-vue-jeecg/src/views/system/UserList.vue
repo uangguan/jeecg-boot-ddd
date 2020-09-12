@@ -66,7 +66,6 @@
     <!-- 操作按钮区域 -->
     <div class="table-operator" style="border-top: 5px">
       <a-button @click="handleAdd" type="primary" icon="plus">添加用户</a-button>
-      <a-button @click="handleSyncUser"  v-has="'user:syncbpm'" type="primary" icon="plus">同步流程</a-button>
       <a-button type="primary" icon="download" @click="handleExportXls('用户信息')">导出</a-button>
       <a-upload name="file" :showUploadList="false" :multiple="false" :headers="tokenHeader" :action="importExcelUrl" @change="handleImportExcel">
         <a-button type="primary" icon="import">导入</a-button>
@@ -120,9 +119,9 @@
         </template>
 
         <span slot="action" slot-scope="text, record">
-          <a @click="handleEdit(record)">编辑</a>
+          <a @click="handleEdit(record)" >编辑</a>
 
-          <a-divider type="vertical"/>
+          <a-divider type="vertical" />
 
           <a-dropdown>
             <a class="ant-dropdown-link">
@@ -220,7 +219,8 @@
             title: '用户账号',
             align: "center",
             dataIndex: 'username',
-            width: 120
+            width: 120,
+            sorter: true
           },
           {
             title: '用户姓名',
@@ -259,7 +259,7 @@
             title: '部门',
             align: "center",
             width: 180,
-            dataIndex: 'orgCode'
+            dataIndex: 'orgCodeTxt'
           },
           {
             title: '状态',
@@ -277,7 +277,6 @@
 
         ],
         url: {
-          imgerver: window._CONFIG['staticDomainURL'],
           syncUser: "/process/extActProcess/doSyncUser",
           list: "/sys/user/list",
           delete: "/sys/user/delete",
@@ -294,7 +293,7 @@
     },
     methods: {
       getAvatarView: function (avatar) {
-        return getFileAccessHttpUrl(avatar,this.url.imgerver,"http")
+        return getFileAccessHttpUrl(avatar)
       },
 
       batchFrozen: function (status) {
@@ -365,8 +364,6 @@
       handleAgentSettings(username){
         this.$refs.sysUserAgentModal.agentSettings(username);
         this.$refs.sysUserAgentModal.title = "用户代理人设置";
-      },
-      handleSyncUser() {
       },
       passwordModalOk() {
         //TODO 密码修改完成 不需要刷新页面，可以把datasource中的数据更新一下

@@ -3,17 +3,20 @@ package org.jeecg.modules.system.service.impl;
 import java.util.*;
 
 import com.alibaba.fastjson.JSONObject;
-import org.apache.shiro.SecurityUtils;
+import org.apache.commons.lang.StringUtils;
 import org.jeecg.common.constant.CacheConstant;
 import org.jeecg.common.constant.CommonConstant;
+import org.jeecg.common.constant.FillRuleConstant;
 import org.jeecg.common.util.FillRuleUtil;
 import org.jeecg.common.util.YouBianCodeUtil;
-import org.jeecg.modules.system.entity.SysDepart;
-import org.jeecg.modules.system.mapper.SysDepartMapper;
+import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.modules.system.entity.*;
+import org.jeecg.modules.system.mapper.*;
 import org.jeecg.modules.system.model.DepartIdModel;
 import org.jeecg.modules.system.model.SysDepartTreeModel;
 import org.jeecg.modules.system.service.ISysDepartService;
 import org.jeecg.modules.system.util.FindsDepartsChildrenUtil;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,6 +36,19 @@ import io.netty.util.internal.StringUtil;
  */
 @Service
 public class SysDepartServiceImpl extends ServiceImpl<SysDepartMapper, SysDepart> implements ISysDepartService {
+
+	@Autowired
+	private SysUserDepartMapper userDepartMapper;
+	@Autowired
+	private SysDepartRoleMapper sysDepartRoleMapper;
+	@Autowired
+	private SysDepartPermissionMapper departPermissionMapper;
+	@Autowired
+	private SysDepartRolePermissionMapper departRolePermissionMapper;
+	@Autowired
+	private SysDepartRoleUserMapper departRoleUserMapper;
+	@Autowired
+	private SysUserMapper sysUserMapper;
 
 	@Override
 	public List<SysDepartTreeModel> queryMyDeptTreeList(String departIds) {
@@ -103,7 +119,7 @@ public class SysDepartServiceImpl extends ServiceImpl<SysDepartMapper, SysDepart
 			//update-begin--Author:baihailong  Date:20191209 for：部门编码规则生成器做成公用配置
 			JSONObject formData = new JSONObject();
 			formData.put("parentId",parentId);
-			String[] codeArray = (String[]) FillRuleUtil.executeRule("org_num_role",formData);
+			String[] codeArray = (String[]) FillRuleUtil.executeRule(FillRuleConstant.DEPART,formData);
 			//update-end--Author:baihailong  Date:20191209 for：部门编码规则生成器做成公用配置
 			sysDepart.setOrgCode(codeArray[0]);
 			String orgType = codeArray[1];
@@ -212,7 +228,7 @@ public class SysDepartServiceImpl extends ServiceImpl<SysDepartMapper, SysDepart
 	}
 	
 	@Override
-	@Transactional
+	@Transactional(rollbackFor = Exception.class)
 	public void deleteBatchWithChildren(List<String> ids) {
 		List<String> idList = new ArrayList<String>();
 		for(String id: ids) {
@@ -220,7 +236,26 @@ public class SysDepartServiceImpl extends ServiceImpl<SysDepartMapper, SysDepart
 			this.checkChildrenExists(id, idList);
 		}
 		this.removeByIds(idList);
-
+		//根据部门id获取部门角色id
+		List<String> roleIdList = new ArrayList<>();
+		LambdaQueryWrapper<SysDepartRole> query = new LambdaQueryWrapper<>();
+		query.select(SysDepartRole::getId).in(SysDepartRole::getDepartId, idList);
+		List<SysDepartRole> depRoleList = sysDepartRoleMapper.selectList(query);
+		for(SysDepartRole deptRole : depRoleList){
+			roleIdList.add(deptRole.getId());
+		}
+		//根据部门id删除用户与部门关系
+		userDepartMapper.delete(new LambdaQueryWrapper<SysUserDepart>().in(SysUserDepart::getDepId,idList));
+		//根据部门id删除部门授权
+		departPermissionMapper.delete(new LambdaQueryWrapper<SysDepartPermission>().in(SysDepartPermission::getDepartId,idList));
+		//根据部门id删除部门角色
+		sysDepartRoleMapper.delete(new LambdaQueryWrapper<SysDepartRole>().in(SysDepartRole::getDepartId,idList));
+		if(roleIdList != null && roleIdList.size()>0){
+			//根据角色id删除部门角色授权
+			departRolePermissionMapper.delete(new LambdaQueryWrapper<SysDepartRolePermission>().in(SysDepartRolePermission::getRoleId,roleIdList));
+			//根据角色id删除部门角色用户信息
+			departRoleUserMapper.delete(new LambdaQueryWrapper<SysDepartRoleUser>().in(SysDepartRoleUser::getDroleId,roleIdList));
+		}
 	}
 
 	@Override
@@ -241,13 +276,26 @@ public class SysDepartServiceImpl extends ServiceImpl<SysDepartMapper, SysDepart
 	 * </p>
 	 */
 	@Override
-	public List<SysDepartTreeModel> searhBy(String keyWord) {
+	public List<SysDepartTreeModel> searhBy(String keyWord,String myDeptSearch,String departIds) {
 		LambdaQueryWrapper<SysDepart> query = new LambdaQueryWrapper<SysDepart>();
+		List<SysDepartTreeModel> newList = new ArrayList<>();
+		//myDeptSearch不为空时为我的部门搜索，只搜索所负责部门
+		if(!StringUtil.isNullOrEmpty(myDeptSearch)){
+			//departIds 为空普通用户或没有管理部门
+			if(StringUtil.isNullOrEmpty(departIds)){
+				return newList;
+			}
+			//根据部门id获取所负责部门
+			String[] codeArr = this.getMyDeptParentOrgCode(departIds);
+			for(int i=0;i<codeArr.length;i++){
+				query.or().likeRight(SysDepart::getOrgCode,codeArr[i]);
+			}
+			query.eq(SysDepart::getDelFlag, CommonConstant.DEL_FLAG_0.toString());
+		}
 		query.like(SysDepart::getDepartName, keyWord);
 		//update-begin--Author:huangzhilin  Date:20140417 for：[bugfree号]组织机构搜索回显优化--------------------
 		SysDepartTreeModel model = new SysDepartTreeModel();
 		List<SysDepart> departList = this.list(query);
-		List<SysDepartTreeModel> newList = new ArrayList<>();
 		if(departList.size() > 0) {
 			for(SysDepart depart : departList) {
 				model = new SysDepartTreeModel(depart);
@@ -264,6 +312,7 @@ public class SysDepartServiceImpl extends ServiceImpl<SysDepartMapper, SysDepart
 	 * 根据部门id删除并且删除其可能存在的子级任何部门
 	 */
 	@Override
+	@Transactional(rollbackFor = Exception.class)
 	public boolean delete(String id) {
 		List<String> idList = new ArrayList<>();
 		idList.add(id);
@@ -271,6 +320,26 @@ public class SysDepartServiceImpl extends ServiceImpl<SysDepartMapper, SysDepart
 		//清空部门树内存
 		//FindsDepartsChildrenUtil.clearDepartIdModel();
 		boolean ok = this.removeByIds(idList);
+		//根据部门id获取部门角色id
+		List<String> roleIdList = new ArrayList<>();
+		LambdaQueryWrapper<SysDepartRole> query = new LambdaQueryWrapper<>();
+		query.select(SysDepartRole::getId).in(SysDepartRole::getDepartId, idList);
+		List<SysDepartRole> depRoleList = sysDepartRoleMapper.selectList(query);
+		for(SysDepartRole deptRole : depRoleList){
+			roleIdList.add(deptRole.getId());
+		}
+		//根据部门id删除用户与部门关系
+		userDepartMapper.delete(new LambdaQueryWrapper<SysUserDepart>().in(SysUserDepart::getDepId,idList));
+		//根据部门id删除部门授权
+		departPermissionMapper.delete(new LambdaQueryWrapper<SysDepartPermission>().in(SysDepartPermission::getDepartId,idList));
+		//根据部门id删除部门角色
+		sysDepartRoleMapper.delete(new LambdaQueryWrapper<SysDepartRole>().in(SysDepartRole::getDepartId,idList));
+		if(roleIdList != null && roleIdList.size()>0){
+			//根据角色id删除部门角色授权
+			departRolePermissionMapper.delete(new LambdaQueryWrapper<SysDepartRolePermission>().in(SysDepartRolePermission::getRoleId,roleIdList));
+			//根据角色id删除部门角色用户信息
+			departRoleUserMapper.delete(new LambdaQueryWrapper<SysDepartRoleUser>().in(SysDepartRoleUser::getDroleId,roleIdList));
+		}
 		return ok;
 	}
 	
@@ -364,4 +433,40 @@ public class SysDepartServiceImpl extends ServiceImpl<SysDepartMapper, SysDepart
 		}
 		return orgCode;
 	}
+    /**
+     * 获取部门树信息根据关键字
+     * @param keyWord
+     * @return
+     */
+    @Override
+    public List<SysDepartTreeModel> queryTreeByKeyWord(String keyWord) {
+        LambdaQueryWrapper<SysDepart> query = new LambdaQueryWrapper<SysDepart>();
+        query.eq(SysDepart::getDelFlag, CommonConstant.DEL_FLAG_0.toString());
+        query.orderByAsc(SysDepart::getDepartOrder);
+        List<SysDepart> list = this.list(query);
+        // 调用wrapTreeDataToTreeList方法生成树状数据
+        List<SysDepartTreeModel> listResult = FindsDepartsChildrenUtil.wrapTreeDataToTreeList(list);
+        List<SysDepartTreeModel> treelist =new ArrayList<>();
+        if(StringUtils.isNotBlank(keyWord)){
+            this.getTreeByKeyWord(keyWord,listResult,treelist);
+        }else{
+            return listResult;
+        }
+        return treelist;
+    }
+    /**
+     * 根据关键字筛选部门信息
+     * @param keyWord
+     * @return
+     */
+    public void getTreeByKeyWord(String keyWord,List<SysDepartTreeModel> allResult,List<SysDepartTreeModel>  newResult){
+        for (SysDepartTreeModel model:allResult) {
+            if (model.getDepartName().contains(keyWord)){
+                newResult.add(model);
+                continue;
+            }else if(model.getChildren()!=null){
+                getTreeByKeyWord(keyWord,model.getChildren(),newResult);
+            }
+        }
+    }
 }

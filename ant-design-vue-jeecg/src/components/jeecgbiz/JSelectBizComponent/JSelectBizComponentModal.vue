@@ -1,9 +1,10 @@
 <template>
-  <a-modal
+  <j-modal
     centered
     :title="name + '选择'"
     :width="width"
     :visible="visible"
+    switchFullscreen
     @ok="handleOk"
     @cancel="close"
     cancelText="关闭">
@@ -32,7 +33,7 @@
         </div>
 
         <a-table
-          size="small"
+          size="middle"
           bordered
           :rowKey="rowKey"
           :columns="innerColumns"
@@ -49,7 +50,7 @@
       <a-col :span="8">
         <a-card :title="'已选' + name" :bordered="false" :head-style="{padding:0}" :body-style="{padding:0}">
 
-          <a-table size="small" :rowKey="rowKey" bordered v-bind="selectedTable">
+          <a-table size="middle" :rowKey="rowKey" bordered v-bind="selectedTable">
               <span slot="action" slot-scope="text, record, index">
                 <a @click="handleDeleteSelected(record, index)">删除</a>
               </span>
@@ -58,17 +59,19 @@
         </a-card>
       </a-col>
     </a-row>
-  </a-modal>
+  </j-modal>
 </template>
 
 <script>
   import { getAction } from '@/api/manage'
+  import Ellipsis from '@/components/Ellipsis'
   import { JeecgListMixin } from '@/mixins/JeecgListMixin'
   import { cloneObject, pushIfNotExist } from '@/utils/util'
 
   export default {
     name: 'JSelectBizComponentModal',
     mixins: [JeecgListMixin],
+    components: { Ellipsis },
     props: {
       value: {
         type: Array,
@@ -128,12 +131,15 @@
         type: String,
         default: 'id'
       },
+      // 过长裁剪长度，设置为 -1 代表不裁剪
+      ellipsisLength: {
+        type: Number,
+        default: 12
+      },
     },
     data() {
       return {
         innerValue: [],
-        // 表头
-        innerColumns: this.columns,
         // 已选择列表
         selectedTable: {
           pagination: false,
@@ -147,6 +153,7 @@
           ],
           dataSource: [],
         },
+        renderEllipsis: (value) => (<ellipsis length={this.ellipsisLength}>{value}</ellipsis>),
         url: { list: this.listUrl },
         /* 分页参数 */
         ipagination: {
@@ -163,6 +170,19 @@
         options: [],
         dataSourceMap: {},
       }
+    },
+    computed: {
+      // 表头
+      innerColumns() {
+        let columns = cloneObject(this.columns)
+        columns.forEach(column => {
+          // 给所有的列加上过长裁剪
+          if (this.ellipsisLength !== -1) {
+            column.customRender = (text) => this.renderEllipsis(text)
+          }
+        })
+        return columns
+      },
     },
     watch: {
       value: {

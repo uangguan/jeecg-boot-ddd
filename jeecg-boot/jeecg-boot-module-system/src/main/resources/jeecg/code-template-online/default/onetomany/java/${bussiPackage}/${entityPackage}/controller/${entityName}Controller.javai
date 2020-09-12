@@ -45,6 +45,12 @@ import com.alibaba.fastjson.JSON;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import org.jeecg.common.aspect.annotation.AutoLog;
+<#assign bpm_flag=false>
+<#list originalColumns as po>
+<#if po.fieldDbName=='bpm_status'>
+  <#assign bpm_flag=true>
+</#if>
+</#list>
 
  /**
  * @Description: ${tableVo.ftlDescription}
@@ -98,6 +104,9 @@ public class ${entityName}Controller {
 	public Result<?> add(@RequestBody ${entityName}Page ${entityName?uncap_first}Page) {
 		${entityName} ${entityName?uncap_first} = new ${entityName}();
 		BeanUtils.copyProperties(${entityName?uncap_first}Page, ${entityName?uncap_first});
+		<#if bpm_flag>
+        ${entityName?uncap_first}.setBpmStatus("1");
+        </#if>
 		${entityName?uncap_first}Service.saveMain(${entityName?uncap_first}, <#list subTables as sub>${entityName?uncap_first}Page.get${sub.entityName}List()<#if sub_has_next>,</#if></#list>);
 		return Result.ok("添加成功！");
 	}
@@ -175,8 +184,8 @@ public class ${entityName}Controller {
 	 * @param id
 	 * @return
 	 */
-	@AutoLog(value = "${sub.ftlDescription}集合-通过id查询")
-	@ApiOperation(value="${sub.ftlDescription}集合-通过id查询", notes="${sub.ftlDescription}-通过id查询")
+	@AutoLog(value = "${sub.ftlDescription}通过主表ID查询")
+	@ApiOperation(value="${sub.ftlDescription}主表ID查询", notes="${sub.ftlDescription}-通主表ID查询")
 	@GetMapping(value = "/query${sub.entityName}ByMainId")
 	public Result<?> query${sub.entityName}ListByMainId(@RequestParam(name="id",required=true) String id) {
 		List<${sub.entityName}> ${sub.entityName?uncap_first}List = ${sub.entityName?uncap_first}Service.selectByMainId(id);
