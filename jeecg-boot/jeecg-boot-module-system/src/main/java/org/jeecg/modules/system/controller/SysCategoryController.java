@@ -136,10 +136,8 @@ public class SysCategoryController {
 		if(sysCategory==null) {
 			result.error500("未找到对应实体");
 		}else {
-			boolean ok = sysCategoryService.removeById(id);
-			if(ok) {
-				result.success("删除成功!");
-			}
+			this.sysCategoryService.deleteSysCategory(id);
+			result.success("删除成功!");
 		}
 		
 		return result;
@@ -156,7 +154,7 @@ public class SysCategoryController {
 		if(ids==null || "".equals(ids.trim())) {
 			result.error500("参数不识别！");
 		}else {
-			this.sysCategoryService.removeByIds(Arrays.asList(ids.split(",")));
+			this.sysCategoryService.deleteSysCategory(ids);
 			result.success("删除成功!");
 		}
 		return result;
@@ -411,10 +409,11 @@ public class SysCategoryController {
 	  * 分类字典控件数据回显[表单页面]
 	  *
 	  * @param ids
+	  * @param delNotExist 是否移除不存在的项，默认为true，设为false如果某个key不存在数据库中，则直接返回key本身
 	  * @return
 	  */
 	 @RequestMapping(value = "/loadDictItem", method = RequestMethod.GET)
-	 public Result<List<String>> loadDictItem(@RequestParam(name = "ids") String ids) {
+	 public Result<List<String>> loadDictItem(@RequestParam(name = "ids") String ids, @RequestParam(name = "delNotExist", required = false, defaultValue = "true") boolean delNotExist) {
 		 Result<List<String>> result = new Result<>();
 		 // 非空判断
 		 if (StringUtils.isBlank(ids)) {
@@ -422,13 +421,8 @@ public class SysCategoryController {
 			 result.setMessage("ids 不能为空");
 			 return result;
 		 }
-		 String[] idArray = ids.split(",");
-		 LambdaQueryWrapper<SysCategory> query = new LambdaQueryWrapper<>();
-		 query.in(SysCategory::getId, Arrays.asList(idArray));
 		 // 查询数据
-		 List<SysCategory> list = this.sysCategoryService.list(query);
-		 // 取出name并返回
-		 List<String> textList = list.stream().map(SysCategory::getName).collect(Collectors.toList());
+		 List<String> textList = sysCategoryService.loadDictItem(ids, delNotExist);
 		 result.setSuccess(true);
 		 result.setResult(textList);
 		 return result;
@@ -461,6 +455,26 @@ public class SysCategoryController {
 		 return result;
 	 }
 
+	 /**
+	  * 根据父级id批量查询子节点
+	  * @param parentIds
+	  * @return
+	  */
+	 @GetMapping("/getChildListBatch")
+	 public Result getChildListBatch(@RequestParam("parentIds") String parentIds) {
+		 try {
+			 QueryWrapper<SysCategory> queryWrapper = new QueryWrapper<>();
+			 List<String> parentIdList = Arrays.asList(parentIds.split(","));
+			 queryWrapper.in("pid", parentIdList);
+			 List<SysCategory> list = sysCategoryService.list(queryWrapper);
+			 IPage<SysCategory> pageList = new Page<>(1, 10, list.size());
+			 pageList.setRecords(list);
+			 return Result.OK(pageList);
+		 } catch (Exception e) {
+			 log.error(e.getMessage(), e);
+			 return Result.error("批量查询子节点失败：" + e.getMessage());
+		 }
+	 }
 
 
 }

@@ -38,11 +38,9 @@
   import pick from 'lodash.pick'
   import { getAction } from '@/api/manage'
   import { queryIdTree } from '@/api/api'
-  import userModal from './UserModal'
   export default {
     name: "DepartWindow",
     components: {
-      userModal,
     },
     data () {
       return {
@@ -177,9 +175,12 @@
   }
 </script>
 
-<style scoped>
+<style lang="less" scoped>
   .ant-table-tbody .ant-table-row td{
     padding-top:10px;
     padding-bottom:10px;
+  }
+  /deep/ .ant-modal{
+    height: 700px;
   }
 </style>

@@ -8,7 +8,6 @@ import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.shiro.SecurityUtils;
-import org.apache.shiro.subject.Subject;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.constant.CacheConstant;
 import org.jeecg.common.constant.CommonConstant;
@@ -17,18 +16,18 @@ import org.jeecg.common.system.util.JwtUtil;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.common.util.*;
 import org.jeecg.common.util.encryption.EncryptedString;
-import org.jeecg.modules.shiro.vo.DefContants;
+import org.jeecg.modules.base.service.BaseCommonService;
 import org.jeecg.modules.system.entity.SysDepart;
+import org.jeecg.modules.system.entity.SysTenant;
 import org.jeecg.modules.system.entity.SysUser;
 import org.jeecg.modules.system.model.SysLoginModel;
-import org.jeecg.modules.system.service.ISysDepartService;
-import org.jeecg.modules.system.service.ISysDictService;
-import org.jeecg.modules.system.service.ISysLogService;
-import org.jeecg.modules.system.service.ISysUserService;
+import org.jeecg.modules.system.service.*;
 import org.jeecg.modules.system.util.RandImageUtil;
+import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.util.*;
@@ -53,7 +52,11 @@ public class LoginController {
 	@Autowired
     private ISysDepartService sysDepartService;
 	@Autowired
+	private ISysTenantService sysTenantService;
+	@Autowired
     private ISysDictService sysDictService;
+	@Resource
+	private BaseCommonService baseCommonService;
 
 	private static final String BASE_CHECK_CODES = "qwertyuiplkjhgfdsazxcvbnmQWERTYUPLKJHGFDSAZXCVBNM1234567890";
 
@@ -77,7 +80,8 @@ public class LoginController {
         String lowerCaseCaptcha = captcha.toLowerCase();
 		String realKey = MD5Util.MD5Encode(lowerCaseCaptcha+sysLoginModel.getCheckKey(), "utf-8");
 		Object checkCode = redisUtil.get(realKey);
-		if(checkCode==null || !checkCode.equals(lowerCaseCaptcha)) {
+		//当进入登录页时，有一定几率出现验证码错误 #1714
+		if(checkCode==null || !checkCode.toString().equals(lowerCaseCaptcha)) {
 			result.error500("验证码错误");
 			return result;
 		}
@@ -104,8 +108,13 @@ public class LoginController {
 				
 		//用户登录信息
 		userInfo(sysUser, result);
-		sysBaseAPI.addLog("用户名: " + username + ",登录成功！", CommonConstant.LOG_TYPE_1, null);
-
+		//update-begin--Author:liusq  Date:20210126  for：登录成功，删除redis中的验证码
+		redisUtil.del(realKey);
+		//update-begin--Author:liusq  Date:20210126  for：登录成功，删除redis中的验证码
+		LoginUser loginUser = new LoginUser();
+		BeanUtils.copyProperties(sysUser, loginUser);
+		baseCommonService.addLog("用户名: " + username + ",登录成功！", CommonConstant.LOG_TYPE_1, null,loginUser);
+        //update-end--Author:wangshuai  Date:20200714  for：登录日志没有记录人员
 		return result;
 	}
 	
@@ -118,14 +127,16 @@ public class LoginController {
 	@RequestMapping(value = "/logout")
 	public Result<Object> logout(HttpServletRequest request,HttpServletResponse response) {
 		//用户退出逻辑
-	    String token = request.getHeader(DefContants.X_ACCESS_TOKEN);
+	    String token = request.getHeader(CommonConstant.X_ACCESS_TOKEN);
 	    if(oConvertUtils.isEmpty(token)) {
 	    	return Result.error("退出登录失败！");
 	    }
 	    String username = JwtUtil.getUsername(token);
 		LoginUser sysUser = sysBaseAPI.getUserByName(username);
 	    if(sysUser!=null) {
-	    	sysBaseAPI.addLog("用户名: "+sysUser.getRealname()+",退出成功！", CommonConstant.LOG_TYPE_1, null);
+			//update-begin--Author:wangshuai  Date:20200714  for：登出日志没有记录人员
+			baseCommonService.addLog("用户名: "+sysUser.getRealname()+",退出成功！", CommonConstant.LOG_TYPE_1, null,sysUser);
+			//update-end--Author:wangshuai  Date:20200714  for：登出日志没有记录人员
 	    	log.info(" 用户名:  "+sysUser.getRealname()+",退出成功！ ");
 	    	//清空用户登录Token缓存
 	    	redisUtil.del(CommonConstant.PREFIX_USER_TOKEN + token);
@@ -252,7 +263,7 @@ public class LoginController {
 				SysUser sysUser = sysUserService.getUserByPhone(mobile);
 				if(sysUser!=null) {
 					result.error500(" 手机号已经注册，请直接登录！");
-					sysBaseAPI.addLog("手机号已经注册，请直接登录！", CommonConstant.LOG_TYPE_1, null);
+					baseCommonService.addLog("手机号已经注册，请直接登录！", CommonConstant.LOG_TYPE_1, null);
 					return result;
 				}
 				b = DySmsHelper.sendSms(mobile, obj, DySmsEnum.REGISTER_TEMPLATE_CODE);
@@ -329,7 +340,7 @@ public class LoginController {
 		//用户信息
 		userInfo(sysUser, result);
 		//添加日志
-		sysBaseAPI.addLog("用户名: " + sysUser.getUsername() + ",登录成功！", CommonConstant.LOG_TYPE_1, null);
+		baseCommonService.addLog("用户名: " + sysUser.getUsername() + ",登录成功！", CommonConstant.LOG_TYPE_1, null);
 
 		return result;
 	}
@@ -345,12 +356,6 @@ public class LoginController {
 	private Result<JSONObject> userInfo(SysUser sysUser, Result<JSONObject> result) {
 		String syspassword = sysUser.getPassword();
 		String username = sysUser.getUsername();
-		// 生成token
-		String token = JwtUtil.sign(username, syspassword);
-        // 设置token缓存有效时间
-		redisUtil.set(CommonConstant.PREFIX_USER_TOKEN + token, token);
-		redisUtil.expire(CommonConstant.PREFIX_USER_TOKEN + token, JwtUtil.EXPIRE_TIME*2 / 1000);
-
 		// 获取用户部门信息
 		JSONObject obj = new JSONObject();
 		List<SysDepart> departs = sysDepartService.queryUserDeparts(sysUser.getId());
@@ -361,8 +366,34 @@ public class LoginController {
 			sysUserService.updateUserDepart(username, departs.get(0).getOrgCode());
 			obj.put("multi_depart", 1);
 		} else {
+			//查询当前是否有登录部门
+			// update-begin--Author:wangshuai Date:20200805 for：如果用戶为选择部门，数据库为存在上一次登录部门，则取一条存进去
+			SysUser sysUserById = sysUserService.getById(sysUser.getId());
+			if(oConvertUtils.isEmpty(sysUserById.getOrgCode())){
+				sysUserService.updateUserDepart(username, departs.get(0).getOrgCode());
+			}
+			// update-end--Author:wangshuai Date:20200805 for：如果用戶为选择部门，数据库为存在上一次登录部门，则取一条存进去
 			obj.put("multi_depart", 2);
 		}
+		// update-begin--Author:sunjianlei Date:20210802 for：获取用户租户信息
+		String tenantIds = sysUser.getRelTenantIds();
+		if (oConvertUtils.isNotEmpty(tenantIds)) {
+			List<String> tenantIdList = Arrays.asList(tenantIds.split(","));
+			// 该方法仅查询有效的租户，如果返回0个就说明所有的租户均无效。
+			List<SysTenant> tenantList = sysTenantService.queryEffectiveTenant(tenantIdList);
+			if (tenantList.size() == 0) {
+				result.error500("与该用户关联的租户均已被冻结，无法登录！");
+				return result;
+			} else {
+				obj.put("tenantList", tenantList);
+			}
+		}
+		// update-end--Author:sunjianlei Date:20210802 for：获取用户租户信息
+		// 生成token
+		String token = JwtUtil.sign(username, syspassword);
+		// 设置token缓存有效时间
+		redisUtil.set(CommonConstant.PREFIX_USER_TOKEN + token, token);
+		redisUtil.expire(CommonConstant.PREFIX_USER_TOKEN + token, JwtUtil.EXPIRE_TIME * 2 / 1000);
 		obj.put("token", token);
 		obj.put("userInfo", sysUser);
 		obj.put("sysAllDictItems", sysDictService.queryAllDictItems());
@@ -457,12 +488,13 @@ public class LoginController {
 		// 设置超时时间
 		redisUtil.set(CommonConstant.PREFIX_USER_TOKEN + token, token);
 		redisUtil.expire(CommonConstant.PREFIX_USER_TOKEN + token, JwtUtil.EXPIRE_TIME*2 / 1000);
+
 		//token 信息
 		obj.put("token", token);
 		result.setResult(obj);
 		result.setSuccess(true);
 		result.setCode(200);
-		sysBaseAPI.addLog("用户名: " + username + ",登录成功[移动端]！", CommonConstant.LOG_TYPE_1, null);
+		baseCommonService.addLog("用户名: " + username + ",登录成功[移动端]！", CommonConstant.LOG_TYPE_1, null);
 		return result;
 	}
 

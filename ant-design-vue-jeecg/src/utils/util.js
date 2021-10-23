@@ -1,5 +1,7 @@
+import Vue from 'vue'
 import * as api from '@/api/api'
 import { isURL } from '@/utils/validate'
+import { ACCESS_TOKEN } from '@/store/mutation-types'
 import onlineCommons from '@jeecg/antd-online-mini'
 
 export function timeFix() {
@@ -126,6 +128,8 @@ function  generateChildRouters (data) {
       componentPath = onlineCommons.OnlCgformTreeList
     }else if(item.component=="modules/online/cgform/auto/erp/OnlCgformErpList"){
       componentPath = onlineCommons.OnlCgformErpList
+    }else if(item.component=="modules/online/cgform/auto/tab/OnlCgformTabList"){
+      componentPath = onlineCommons.OnlCgformTabList
     }else if(item.component=="modules/online/cgform/auto/innerTable/OnlCgformInnerTableList"){
       componentPath = onlineCommons.OnlCgformInnerTableList
     }else if(item.component=="modules/online/cgreport/OnlCgreportHeadList"){
@@ -136,12 +140,12 @@ function  generateChildRouters (data) {
       componentPath = resolve => require(['@/' + component+'.vue'], resolve)
     }
 
-
     let menu =  {
       path: item.path,
       name: item.name,
       redirect:item.redirect,
       component: componentPath,
+      //component: resolve => require(['@/' + component+'.vue'], resolve),
       hidden:item.hidden,
       //component:()=> import(`@/views/${item.component}.vue`),
       meta: {
@@ -151,8 +155,9 @@ function  generateChildRouters (data) {
         permissionList:item.meta.permissionList,
         keepAlive:item.meta.keepAlive,
         /*update_begin author:wuxianquan date:20190908 for:赋值 */
-        internalOrExternal:item.meta.internalOrExternal
+        internalOrExternal:item.meta.internalOrExternal,
         /*update_end author:wuxianquan date:20190908 for:赋值 */
+        componentName:item.meta.componentName
       }
     }
     if(item.alwaysShow){
@@ -458,7 +463,7 @@ export function simpleDebounce(fn, delay = 100) {
       clearTimeout(timer)
     }
     timer = setTimeout(() => {
-      fn.apply(null, args)
+      fn.apply(this, args)
     }, delay)
   }
 }
@@ -527,4 +532,62 @@ export function getVmParentByName(vm, name) {
     }
   }
   return null
+}
+
+/**
+ * 使一个值永远不会为（null | undefined）
+ *
+ * @param value 要处理的值
+ * @param def 默认值，如果value为（null | undefined）则返回的默认值，可不传，默认为''
+ */
+export function neverNull(value, def) {
+  return value == null ? (neverNull(def, '')) : value
+}
+
+/**
+ * 根据元素值移除数组中的一个元素
+ * @param array 数组
+ * @param prod 属性名
+ * @param value 属性值
+ * @returns {string}
+ */
+export function removeArrayElement(array, prod, value) {
+  let index = -1
+  for(let i = 0;i<array.length;i++){
+    if(array[i][prod] == value){
+      index = i;
+      break;
+    }
+  }
+  if(index>=0){
+    array.splice(index, 1);
+  }
+}
+
+/** 判断是否是OAuth2APP环境 */
+export function isOAuth2AppEnv() {
+  return /wxwork|dingtalk/i.test(navigator.userAgent)
+}
+
+/**
+ * 获取积木报表打印地址
+ * @param url
+ * @param id
+ * @param open 是否自动打开
+ * @returns {*}
+ */
+export function getReportPrintUrl(url, id, open) {
+  // URL支持{{ window.xxx }}占位符变量
+  url = url.replace(/{{([^}]+)?}}/g, (s1, s2) => eval(s2))
+  if (url.includes('?')) {
+    url += '&'
+  } else {
+    url += '?'
+  }
+  url += `id=${id}`
+  url += `&token=${Vue.ls.get(ACCESS_TOKEN)}`
+  if (open) {
+    window.open(url)
+  }
+  return url
 }

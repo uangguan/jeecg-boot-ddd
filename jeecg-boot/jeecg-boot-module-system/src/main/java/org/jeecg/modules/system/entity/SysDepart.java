@@ -6,13 +6,11 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Data;
 import org.jeecg.common.aspect.annotation.Dict;
-import org.jeecg.modules.system.model.SysDepartTreeModel;
 import org.jeecgframework.poi.excel.annotation.Excel;
 import org.springframework.format.annotation.DateTimeFormat;
 
 import java.io.Serializable;
 import java.util.Date;
-import java.util.List;
 import java.util.Objects;
 
 /**
@@ -29,7 +27,7 @@ public class SysDepart implements Serializable {
     private static final long serialVersionUID = 1L;
     
 	/**ID*/
-	@TableId(type = IdType.ID_WORKER_STR)
+	@TableId(type = IdType.ASSIGN_ID)
 	private String id;
 	/**父机构ID*/
 	private String parentId;
@@ -47,7 +45,7 @@ public class SysDepart implements Serializable {
 	/**描述*/
 	@Excel(name="描述",width=15)
 	private String description;
-	/**机构类别 1组织机构，2岗位*/
+	/**机构类别 1公司，2组织机构，2岗位*/
 	@Excel(name="机构类别",width=15,dicCode="org_category")
 	private String orgCategory;
 	/**机构类型*/
@@ -73,6 +71,8 @@ public class SysDepart implements Serializable {
 	/**删除状态（0，正常，1已删除）*/
 	@Dict(dicCode = "del_flag")
 	private String delFlag;
+	/**对接企业微信的ID*/
+	private String qywxIdentifier;
 	/**创建人*/
 	private String createBy;
 	/**创建日期*/

@@ -36,15 +36,15 @@ export function getSmsCaptcha(parameter) {
   })
 }
 
-export function getInfo() {
-  return axios({
-    url: '/api/user/info',
-    method: 'get',
-    headers: {
-      'Content-Type': 'application/json;charset=UTF-8'
-    }
-  })
-}
+// export function getInfo() {
+//   return axios({
+//     url: '/api/user/info',
+//     method: 'get',
+//     headers: {
+//       'Content-Type': 'application/json;charset=UTF-8'
+//     }
+//   })
+// }
 
 export function logout(logoutToken) {
   return axios({
@@ -60,14 +60,28 @@ export function logout(logoutToken) {
 /**
  * 第三方登录
  * @param token
+ * @param thirdType
  * @returns {*}
  */
-export function thirdLogin(token) {
+export function thirdLogin(token,thirdType) {
   return axios({
-    url: `/thirdLogin/getLoginUser/${token}`,
+    url: `/sys/thirdLogin/getLoginUser/${token}/${thirdType}`,
     method: 'get',
     headers: {
       'Content-Type': 'application/json;charset=UTF-8'
     }
+  })
+}
+
+/**
+ * 强退其他账号
+ * @param token
+ * @returns {*}
+ */
+export function forceLogout(parameter) {
+  return axios({
+    url: '/sys/online/forceLogout',
+    method: 'post',
+    data: parameter
   })
 }

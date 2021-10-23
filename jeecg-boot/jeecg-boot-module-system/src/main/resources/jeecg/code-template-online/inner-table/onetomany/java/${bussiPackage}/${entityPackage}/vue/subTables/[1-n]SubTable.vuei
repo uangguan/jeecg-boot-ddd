@@ -68,8 +68,8 @@
             align: 'center',
     <#if po.classType == 'date'>
             dataIndex: '${po.fieldName}',
-    <#elseif po.fieldDbType=='Blob'>
-            dataIndex: '${po.fieldName}String'
+     <#elseif po.fieldDbType=='Blob'>
+           dataIndex: '${po.fieldName}String'
     <#elseif po.classType=='umeditor'>
             dataIndex: '${po.fieldName}',
             scopedSlots: {customRender: 'htmlSlot'}
@@ -79,7 +79,7 @@
     <#elseif po.classType=='image'>
             dataIndex: '${po.fieldName}',
             scopedSlots: {customRender: 'imgSlot'}
-    <#elseif po.classType=='list' || po.classType=='list_multi' || po.classType=='sel_search' || po.classType=='radio' || po.classType=='checkbox' || po.classType=='sel_depart' || po.classType=='sel_user'>
+    <#elseif po.classType == 'sel_tree' || po.classType=='list' || po.classType=='list_multi' || po.classType=='sel_search' || po.classType=='radio' || po.classType=='checkbox' || po.classType=='sel_depart' || po.classType=='sel_user'>
             dataIndex: '${po.fieldName}_dictText'
     <#elseif po.classType=='cat_tree'>
       <#if list_need_category>
@@ -89,6 +89,13 @@
             dataIndex: '${po.fieldName}',
             customRender: (text, record) => (text ? record['${po.dictText}'] : '')
       </#if>
+      <#elseif po.classType=='switch'>
+            dataIndex: '${po.fieldName}',
+            <#if po.dictField != 'is_open'>
+            customRender: (text) => (!text ? "" : (text == ${po.dictField}[0] ? "是" : "否"))
+            <#else>
+            customRender: (text) => (!text ? "" : (text == "Y" ? "是" : "否"))
+            </#if>
     <#else>
             dataIndex: '${po.fieldName}',
     </#if>

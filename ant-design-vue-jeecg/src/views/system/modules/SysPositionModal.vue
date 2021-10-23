@@ -10,40 +10,39 @@
     cancelText="关闭">
 
     <a-spin :spinning="confirmLoading">
-      <a-form :form="form">
+      <a-form-model ref="form" :model="model" :rules="validatorRules">
 
-        <a-form-item
+        <a-form-model-item
           :labelCol="labelCol"
           :wrapperCol="wrapperCol"
+          prop="code"
+          required
           label="职务编码">
-          <a-input placeholder="请输入职务编码" v-decorator="['code', validatorRules.code]"/>
-        </a-form-item>
-        <a-form-item
+          <a-input placeholder="请输入职务编码" v-model="model.code" :read-only="readOnly"/>
+        </a-form-model-item>
+        <a-form-model-item
           :labelCol="labelCol"
           :wrapperCol="wrapperCol"
+          prop="name"
+          required
           label="职务名称">
-          <a-input placeholder="请输入职务名称" v-decorator="['name', validatorRules.name]"/>
-        </a-form-item>
-        <a-form-item
+          <a-input placeholder="请输入职务名称" v-model="model.name"/>
+        </a-form-model-item>
+        <a-form-model-item
           :labelCol="labelCol"
           :wrapperCol="wrapperCol"
+          prop="postRank"
+          required
           label="职级"
         >
           <j-dict-select-tag
             placeholder="请选择职级"
-            :triggerChange="true"
             dictCode="position_rank"
-            v-decorator="['postRank', validatorRules.postRank]"
+            v-model="model.postRank"
           />
-        </a-form-item>
-        <!--<a-form-item-->
-        <!--  :labelCol="labelCol"-->
-        <!--  :wrapperCol="wrapperCol"-->
-        <!--  label="公司id">-->
-        <!--  <a-input placeholder="请输入公司id" v-decorator="['companyId', {}]"/>-->
-        <!--</a-form-item>-->
+        </a-form-model-item>
 
-      </a-form>
+      </a-form-model>
     </a-spin>
   </a-modal>
 </template>
@@ -73,10 +72,8 @@
           sm: { span: 16 },
         },
         confirmLoading: false,
-        form: this.$form.createForm(this),
         validatorRules: {
-          code: {
-            rules: [
+          code: [
               { required: true, message: '请输入职务编码' },
               {
                 validator: (rule, value, callback) => {
@@ -101,15 +98,15 @@
                   }, 300)
                 }
               }
-            ]
-          },
-          name: { rules: [{ required: true, message: '请输入职务名称' }] },
-          postRank: { rules: [{ required: true, message: '请选择职级' }] },
+            ],
+          name: [{ required: true, message: '请输入职务名称' }] ,
+          postRank:  [{ required: true, message: '请选择职级' }] ,
         },
         url: {
           add: '/sys/position/add',
           edit: '/sys/position/edit',
         },
+        readOnly:false
       }
     },
     created() {
@@ -119,27 +116,24 @@
         this.edit({})
       },
       edit(record) {
-        this.form.resetFields()
         this.model = Object.assign({}, record)
         this.visible = true
-        this.$nextTick(() => {
-          this.form.setFieldsValue(pick(this.model,
-            'code',
-            'name',
-            'postRank',
-            // 'companyId'
-          ))
-        })
+        if(record.id){
+          this.readOnly=true
+        }else{
+          this.readOnly=false
+        }
       },
       close() {
         this.$emit('close')
         this.visible = false
+        this.$refs.form.resetFields();
       },
       handleOk() {
         const that = this
         // 触发表单验证
-        this.form.validateFields((err, values) => {
-          if (!err) {
+        this.$refs.form.validate(valid => {
+          if (valid) {
             that.confirmLoading = true
             let httpurl = ''
             let method = ''
@@ -151,8 +145,7 @@
               method = 'put'
             }
 
-            let formData = Object.assign(this.model, values)
-            httpAction(httpurl, formData, method).then((res) => {
+            httpAction(httpurl, this.model, method).then((res) => {
               if (res.success) {
                 that.$message.success(res.message)
                 that.$emit('ok')
@@ -163,6 +156,8 @@
               that.confirmLoading = false
               that.close()
             })
+          }else{
+            return false;
           }
         })
       },

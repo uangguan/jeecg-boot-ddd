@@ -1,54 +1,55 @@
 package org.jeecg.modules.system.controller;
 
-import java.io.IOException;
-import java.util.Collection;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
-import javax.annotation.Resource;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-
+import com.alibaba.fastjson.JSONObject;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.jeecg.dingtalk.api.core.response.Response;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.StringUtils;
 import org.apache.shiro.SecurityUtils;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.constant.CommonConstant;
 import org.jeecg.common.constant.CommonSendStatus;
 import org.jeecg.common.constant.WebsocketConst;
-import org.jeecg.common.system.query.QueryGenerator;
+import org.jeecg.common.system.api.ISysBaseAPI;
 import org.jeecg.common.system.util.JwtUtil;
 import org.jeecg.common.system.vo.LoginUser;
+import org.jeecg.common.util.RedisUtil;
+import org.jeecg.common.util.TokenUtils;
 import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.message.websocket.WebSocket;
 import org.jeecg.modules.system.entity.SysAnnouncement;
 import org.jeecg.modules.system.entity.SysAnnouncementSend;
 import org.jeecg.modules.system.service.ISysAnnouncementSendService;
 import org.jeecg.modules.system.service.ISysAnnouncementService;
-
+import org.jeecg.modules.system.service.impl.ThirdAppDingtalkServiceImpl;
+import org.jeecg.modules.system.service.impl.ThirdAppWechatEnterpriseServiceImpl;
+import org.jeecg.modules.system.util.XSSUtils;
 import org.jeecgframework.poi.excel.ExcelImportUtil;
 import org.jeecgframework.poi.excel.def.NormalExcelConstants;
 import org.jeecgframework.poi.excel.entity.ExportParams;
 import org.jeecgframework.poi.excel.entity.ImportParams;
 import org.jeecgframework.poi.excel.view.JeecgEntityExcelView;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestMethod;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.multipart.MultipartHttpServletRequest;
 import org.springframework.web.servlet.ModelAndView;
 
-import com.alibaba.fastjson.JSONObject;
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.baomidou.mybatisplus.core.metadata.IPage;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import javax.annotation.Resource;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
-import lombok.extern.slf4j.Slf4j;
+import static org.jeecg.common.constant.CommonConstant.ANNOUNCEMENT_SEND_STATUS_1;
 
 /**
  * @Title: Controller
@@ -67,6 +68,15 @@ public class SysAnnouncementController {
 	private ISysAnnouncementSendService sysAnnouncementSendService;
 	@Resource
     private WebSocket webSocket;
+	@Autowired
+	ThirdAppWechatEnterpriseServiceImpl wechatEnterpriseService;
+	@Autowired
+	ThirdAppDingtalkServiceImpl dingtalkService;
+	@Autowired
+	private ISysBaseAPI sysBaseAPI;
+	@Autowired
+	@Lazy
+	private RedisUtil redisUtil;
 
 	/**
 	  * 分页列表查询
@@ -96,10 +106,6 @@ public class SysAnnouncementController {
 			}
 		}
 		IPage<SysAnnouncement> pageList = sysAnnouncementService.page(page, queryWrapper);
-		log.info("查询当前页："+pageList.getCurrent());
-		log.info("查询当前页数量："+pageList.getSize());
-		log.info("查询结果数量："+pageList.getRecords().size());
-		log.info("数据总数："+pageList.getTotal());
 		result.setSuccess(true);
 		result.setResult(pageList);
 		return result;
@@ -114,6 +120,10 @@ public class SysAnnouncementController {
 	public Result<SysAnnouncement> add(@RequestBody SysAnnouncement sysAnnouncement) {
 		Result<SysAnnouncement> result = new Result<SysAnnouncement>();
 		try {
+			// update-begin-author:liusq date:20210804 for:标题处理xss攻击的问题
+			String title = XSSUtils.striptXSS(sysAnnouncement.getTitile());
+			sysAnnouncement.setTitile(title);
+			// update-end-author:liusq date:20210804 for:标题处理xss攻击的问题
 			sysAnnouncement.setDelFlag(CommonConstant.DEL_FLAG_0.toString());
 			sysAnnouncement.setSendStatus(CommonSendStatus.UNPUBLISHED_STATUS_0);//未发布
 			sysAnnouncementService.saveAnnouncement(sysAnnouncement);
@@ -137,6 +147,10 @@ public class SysAnnouncementController {
 		if(sysAnnouncementEntity==null) {
 			result.error500("未找到对应实体");
 		}else {
+			// update-begin-author:liusq date:20210804 for:标题处理xss攻击的问题
+			String title = XSSUtils.striptXSS(sysAnnouncement.getTitile());
+			sysAnnouncement.setTitile(title);
+			// update-end-author:liusq date:20210804 for:标题处理xss攻击的问题
 			boolean ok = sysAnnouncementService.upDateAnnouncement(sysAnnouncement);
 			//TODO 返回false说明什么？
 			if(ok) {
@@ -233,7 +247,7 @@ public class SysAnnouncementController {
 			    	obj.put(WebsocketConst.MSG_CMD, WebsocketConst.CMD_TOPIC);
 					obj.put(WebsocketConst.MSG_ID, sysAnnouncement.getId());
 					obj.put(WebsocketConst.MSG_TXT, sysAnnouncement.getTitile());
-			    	webSocket.sendAllMessage(obj.toJSONString());
+			    	webSocket.sendMessage(obj.toJSONString());
 				}else {
 					// 2.插入用户通告阅读标记表记录
 					String userId = sysAnnouncement.getUserIds();
@@ -244,7 +258,20 @@ public class SysAnnouncementController {
 			    	obj.put(WebsocketConst.MSG_CMD, WebsocketConst.CMD_USER);
 					obj.put(WebsocketConst.MSG_ID, sysAnnouncement.getId());
 					obj.put(WebsocketConst.MSG_TXT, sysAnnouncement.getTitile());
-			    	webSocket.sendMoreMessage(userIds, obj.toJSONString());
+			    	webSocket.sendMessage(userIds, obj.toJSONString());
+				}
+				try {
+					// 同步企业微信、钉钉的消息通知
+					Response<String> dtResponse = dingtalkService.sendActionCardMessage(sysAnnouncement, true);
+					wechatEnterpriseService.sendTextCardMessage(sysAnnouncement, true);
+
+					if (dtResponse != null && dtResponse.isSuccess()) {
+						String taskId = dtResponse.getResult();
+						sysAnnouncement.setDtTaskId(taskId);
+						sysAnnouncementService.updateById(sysAnnouncement);
+					}
+				} catch (Exception e) {
+					log.error("同步发送第三方APP消息失败：", e);
 				}
 			}
 		}
@@ -269,6 +296,13 @@ public class SysAnnouncementController {
 			boolean ok = sysAnnouncementService.updateById(sysAnnouncement);
 			if(ok) {
 				result.success("该系统通知撤销成功");
+				if (oConvertUtils.isNotEmpty(sysAnnouncement.getDtTaskId())) {
+					try {
+						dingtalkService.recallMessage(sysAnnouncement.getDtTaskId());
+					} catch (Exception e) {
+						log.error("第三方APP撤回消息失败：", e);
+					}
+				}
 			}
 		}
 
@@ -285,23 +319,31 @@ public class SysAnnouncementController {
 		LoginUser sysUser = (LoginUser)SecurityUtils.getSubject().getPrincipal();
 		String userId = sysUser.getId();
 		// 1.将系统消息补充到用户通告阅读标记表中
-		Collection<String> anntIds = sysAnnouncementSendService.queryByUserId(userId);
 		LambdaQueryWrapper<SysAnnouncement> querySaWrapper = new LambdaQueryWrapper<SysAnnouncement>();
 		querySaWrapper.eq(SysAnnouncement::getMsgType,CommonConstant.MSG_TYPE_ALL); // 全部人员
 		querySaWrapper.eq(SysAnnouncement::getDelFlag,CommonConstant.DEL_FLAG_0.toString());  // 未删除
 		querySaWrapper.eq(SysAnnouncement::getSendStatus, CommonConstant.HAS_SEND); //已发布
 		querySaWrapper.ge(SysAnnouncement::getEndTime, sysUser.getCreateTime()); //新注册用户不看结束通知
-		if(anntIds!=null&&anntIds.size()>0) {
-			querySaWrapper.notIn(SysAnnouncement::getId, anntIds);
-		}
+		//update-begin--Author:liusq  Date:20210108 for：[JT-424] 【开源issue】bug处理--------------------
+		querySaWrapper.notInSql(SysAnnouncement::getId,"select annt_id from sys_announcement_send where user_id='"+userId+"'");
+		//update-begin--Author:liusq  Date:20210108  for： [JT-424] 【开源issue】bug处理--------------------
 		List<SysAnnouncement> announcements = sysAnnouncementService.list(querySaWrapper);
 		if(announcements.size()>0) {
 			for(int i=0;i<announcements.size();i++) {
+				//update-begin--Author:wangshuai  Date:20200803  for： 通知公告消息重复LOWCOD-759--------------------
+				//因为websocket没有判断是否存在这个用户，要是判断会出现问题，故在此判断逻辑
+				LambdaQueryWrapper<SysAnnouncementSend> query = new LambdaQueryWrapper<>();
+				query.eq(SysAnnouncementSend::getAnntId,announcements.get(i).getId());
+				query.eq(SysAnnouncementSend::getUserId,userId);
+				SysAnnouncementSend one = sysAnnouncementSendService.getOne(query);
+				if(null==one){
 				SysAnnouncementSend announcementSend = new SysAnnouncementSend();
 				announcementSend.setAnntId(announcements.get(i).getId());
 				announcementSend.setUserId(userId);
 				announcementSend.setReadFlag(CommonConstant.NO_READ_FLAG);
 				sysAnnouncementSendService.save(announcementSend);
+				}
+				//update-end--Author:wangshuai  Date:20200803  for： 通知公告消息重复LOWCOD-759------------
 			}
 		}
 		// 2.查询用户未读的系统消息
@@ -328,9 +370,10 @@ public class SysAnnouncementController {
     @RequestMapping(value = "/exportXls")
     public ModelAndView exportXls(SysAnnouncement sysAnnouncement,HttpServletRequest request) {
         // Step.1 组装查询条件
-        QueryWrapper<SysAnnouncement> queryWrapper = QueryGenerator.initQueryWrapper(sysAnnouncement, request.getParameterMap());
+        LambdaQueryWrapper<SysAnnouncement> queryWrapper = new LambdaQueryWrapper<SysAnnouncement>(sysAnnouncement);
         //Step.2 AutoPoi 导出Excel
         ModelAndView mv = new ModelAndView(new JeecgEntityExcelView());
+		queryWrapper.eq(SysAnnouncement::getDelFlag,CommonConstant.DEL_FLAG_0);
         List<SysAnnouncement> pageList = sysAnnouncementService.list(queryWrapper);
         //导出文件名称
         mv.addObject(NormalExcelConstants.FILE_NAME, "系统通告列表");
@@ -398,7 +441,7 @@ public class SysAnnouncementController {
 					obj.put(WebsocketConst.MSG_CMD, WebsocketConst.CMD_TOPIC);
 					obj.put(WebsocketConst.MSG_ID, sysAnnouncement.getId());
 					obj.put(WebsocketConst.MSG_TXT, sysAnnouncement.getTitile());
-					webSocket.sendAllMessage(obj.toJSONString());
+					webSocket.sendMessage(obj.toJSONString());
 				}else {
 					// 2.插入用户通告阅读标记表记录
 					String userId = sysAnnouncement.getUserIds();
@@ -407,15 +450,44 @@ public class SysAnnouncementController {
 						obj.put(WebsocketConst.MSG_CMD, WebsocketConst.CMD_USER);
 						obj.put(WebsocketConst.MSG_ID, sysAnnouncement.getId());
 						obj.put(WebsocketConst.MSG_TXT, sysAnnouncement.getTitile());
-						webSocket.sendMoreMessage(userIds, obj.toJSONString());
+						webSocket.sendMessage(userIds, obj.toJSONString());
 					}
 				}
 			}
 		}else{
 			obj.put(WebsocketConst.MSG_CMD, WebsocketConst.CMD_TOPIC);
 			obj.put(WebsocketConst.MSG_TXT, "批量设置已读");
-			webSocket.sendAllMessage(obj.toJSONString());
+			webSocket.sendMessage(obj.toJSONString());
 		}
 		return result;
 	}
+
+	/**
+	 * 通告查看详情页面（用于第三方APP）
+	 * @param modelAndView
+	 * @param id
+	 * @return
+	 */
+    @GetMapping("/show/{id}")
+    public ModelAndView showContent(ModelAndView modelAndView, @PathVariable("id") String id, HttpServletRequest request) {
+        SysAnnouncement announcement = sysAnnouncementService.getById(id);
+        if (announcement != null) {
+            boolean tokenOK = false;
+            try {
+                // 验证Token有效性
+                tokenOK = TokenUtils.verifyToken(request, sysBaseAPI, redisUtil);
+            } catch (Exception ignored) {
+            }
+            // 判断是否传递了Token，并且Token有效，如果传了就不做查看限制，直接返回
+            // 如果Token无效，就做查看限制：只能查看已发布的
+            if (tokenOK || ANNOUNCEMENT_SEND_STATUS_1.equals(announcement.getSendStatus())) {
+                modelAndView.addObject("data", announcement);
+                modelAndView.setViewName("announcement/showContent");
+                return modelAndView;
+            }
+        }
+        modelAndView.setStatus(HttpStatus.NOT_FOUND);
+        return modelAndView;
+    }
+
 }

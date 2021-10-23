@@ -5,10 +5,13 @@ import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.authz.annotation.RequiresRoles;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.constant.CommonConstant;
-import org.jeecg.common.system.util.JwtUtil;
+import org.jeecg.common.constant.enums.RoleIndexConfigEnum;
+import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.common.util.MD5Util;
 import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.system.entity.SysDepartPermission;
@@ -20,6 +23,7 @@ import org.jeecg.modules.system.model.TreeModel;
 import org.jeecg.modules.system.service.*;
 import org.jeecg.modules.system.util.PermissionDataUtil;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
@@ -49,6 +53,15 @@ public class SysPermissionController {
 
 	@Autowired
 	private ISysDepartPermissionService sysDepartPermissionService;
+
+	@Autowired
+	private ISysUserService sysUserService;
+	/**
+	 * 系统安全模式（true开启，false关闭）
+	 */
+	@Value(value = "${jeecg.safeMode:false}")
+	private Boolean sysSafeMode;
+
 
 	/**
 	 * 加载数据节点
@@ -192,20 +205,20 @@ public class SysPermissionController {
 //	}
 
 	/**
-	 * 查询用户拥有的菜单权限和按钮权限（根据TOKEN）
+	 * 查询用户拥有的菜单权限和按钮权限
 	 * 
 	 * @return
 	 */
 	@RequestMapping(value = "/getUserPermissionByToken", method = RequestMethod.GET)
-	public Result<?> getUserPermissionByToken(@RequestParam(name = "token", required = true) String token) {
+	public Result<?> getUserPermissionByToken() {
 		Result<JSONObject> result = new Result<JSONObject>();
 		try {
-			if (oConvertUtils.isEmpty(token)) {
-				return Result.error("TOKEN不允许为空！");
+			//直接获取当前用户不适用前端token
+			LoginUser loginUser = (LoginUser) SecurityUtils.getSubject().getPrincipal();
+			if (oConvertUtils.isEmpty(loginUser)) {
+				return Result.error("请登录系统！");
 			}
-			log.info(" ------ 通过令牌获取用户拥有的访问菜单 ---- TOKEN ------ " + token);
-			String username = JwtUtil.getUsername(token);
-			List<SysPermission> metaList = sysPermissionService.queryByUser(username);
+			List<SysPermission> metaList = sysPermissionService.queryByUser(loginUser.getUsername());
 			//添加首页路由
 			//update-begin-author:taoyan date:20200211 for: TASK #3368 【路由缓存】首页的缓存设置有问题，需要根据后台的路由配置来实现是否缓存
 			if(!PermissionDataUtil.hasIndexPage(metaList)){
@@ -213,6 +226,15 @@ public class SysPermissionController {
 				metaList.add(0,indexMenu);
 			}
 			//update-end-author:taoyan date:20200211 for: TASK #3368 【路由缓存】首页的缓存设置有问题，需要根据后台的路由配置来实现是否缓存
+
+			//update-begin--Author:liusq  Date:20210624  for:自定义首页地址LOWCOD-1578
+			List<String> roles = sysUserService.getRole(loginUser.getUsername());
+            String compUrl = RoleIndexConfigEnum.getIndexByRoles(roles);
+			if(StringUtils.isNotBlank(compUrl)){
+				List<SysPermission> menus = metaList.stream().filter(sysPermission -> "首页".equals(sysPermission.getName())).collect(Collectors.toList());
+				menus.get(0).setComponent(compUrl);
+			}
+			//update-end--Author:liusq  Date:20210624  for：自定义首页地址LOWCOD-1578
 			JSONObject json = new JSONObject();
 			JSONArray menujsonArray = new JSONArray();
 			this.getPermissionJsonArray(menujsonArray, metaList, null);
@@ -232,10 +254,11 @@ public class SysPermissionController {
 			json.put("auth", authjsonArray);
 			//全部权限配置集合（按钮权限，访问权限）
 			json.put("allAuth", allauthjsonArray);
+			json.put("sysSafeMode", sysSafeMode);
 			result.setResult(json);
 			result.success("查询成功");
 		} catch (Exception e) {
-			result.error500("查询失败:" + e.getMessage());  
+			result.error500("查询失败:" + e.getMessage());
 			log.error(e.getMessage(), e);
 		}
 		return result;
@@ -246,7 +269,7 @@ public class SysPermissionController {
 	 * @param permission
 	 * @return
 	 */
-	@RequiresRoles({ "admin" })
+	//@RequiresRoles({ "admin" })
 	@RequestMapping(value = "/add", method = RequestMethod.POST)
 	public Result<SysPermission> add(@RequestBody SysPermission permission) {
 		Result<SysPermission> result = new Result<SysPermission>();
@@ -266,7 +289,7 @@ public class SysPermissionController {
 	 * @param permission
 	 * @return
 	 */
-	@RequiresRoles({ "admin" })
+	//@RequiresRoles({ "admin" })
 	@RequestMapping(value = "/edit", method = { RequestMethod.PUT, RequestMethod.POST })
 	public Result<SysPermission> edit(@RequestBody SysPermission permission) {
 		Result<SysPermission> result = new Result<>();
@@ -286,7 +309,7 @@ public class SysPermissionController {
 	 * @param id
 	 * @return
 	 */
-	@RequiresRoles({ "admin" })
+	//@RequiresRoles({ "admin" })
 	@RequestMapping(value = "/delete", method = RequestMethod.DELETE)
 	public Result<SysPermission> delete(@RequestParam(name = "id", required = true) String id) {
 		Result<SysPermission> result = new Result<>();
@@ -305,7 +328,7 @@ public class SysPermissionController {
 	 * @param ids
 	 * @return
 	 */
-	@RequiresRoles({ "admin" })
+	//@RequiresRoles({ "admin" })
 	@RequestMapping(value = "/deleteBatch", method = RequestMethod.DELETE)
 	public Result<SysPermission> deleteBatch(@RequestParam(name = "ids", required = true) String ids) {
 		Result<SysPermission> result = new Result<>();
@@ -326,7 +349,7 @@ public class SysPermissionController {
 
 	/**
 	 * 获取全部的权限树
-	 * 
+	 *
 	 * @return
 	 */
 	@RequestMapping(value = "/queryTreeList", method = RequestMethod.GET)
@@ -358,7 +381,7 @@ public class SysPermissionController {
 
 	/**
 	 * 异步加载数据节点
-	 * 
+	 *
 	 * @return
 	 */
 	@RequestMapping(value = "/queryListAsync", method = RequestMethod.GET)
@@ -381,7 +404,7 @@ public class SysPermissionController {
 
 	/**
 	 * 查询角色授权
-	 * 
+	 *
 	 * @return
 	 */
 	@RequestMapping(value = "/queryRolePermission", method = RequestMethod.GET)
@@ -399,11 +422,11 @@ public class SysPermissionController {
 
 	/**
 	 * 保存角色授权
-	 * 
+	 *
 	 * @return
 	 */
 	@RequestMapping(value = "/saveRolePermission", method = RequestMethod.POST)
-	@RequiresRoles({ "admin" })
+	//@RequiresRoles({ "admin" })
 	public Result<String> saveRolePermission(@RequestBody JSONObject json) {
 		long start = System.currentTimeMillis();
 		Result<String> result = new Result<>();
@@ -458,7 +481,7 @@ public class SysPermissionController {
 
 		}
 	}
-	
+
 	/**
 	  *  获取权限JSON数组
 	 * @param jsonArray
@@ -470,6 +493,7 @@ public class SysPermissionController {
 			json = new JSONObject();
 			json.put("action", permission.getPerms());
 			json.put("status", permission.getStatus());
+			//1显示2禁用
 			json.put("type", permission.getPermsType());
 			json.put("describe", permission.getName());
 			jsonArray.add(json);
@@ -608,6 +632,14 @@ public class SysPermissionController {
 			/* update_end author:wuxianquan date:20190908 for: 往菜单信息里添加外链菜单打开方式*/
 
 			meta.put("title", permission.getName());
+
+			//update-begin--Author:scott  Date:20201015 for：路由缓存问题，关闭了tab页时再打开就不刷新 #842
+			String component = permission.getComponent();
+			if(oConvertUtils.isNotEmpty(permission.getComponentName()) || oConvertUtils.isNotEmpty(component)){
+				meta.put("componentName", oConvertUtils.getString(permission.getComponentName(),component.substring(component.lastIndexOf("/")+1)));
+			}
+			//update-end--Author:scott  Date:20201015 for：路由缓存问题，关闭了tab页时再打开就不刷新 #842
+
 			if (oConvertUtils.isEmpty(permission.getParentId())) {
 				// 一级菜单跳转地址
 				json.put("redirect", permission.getRedirect());
@@ -683,7 +715,7 @@ public class SysPermissionController {
 	 * @param sysPermissionDataRule
 	 * @return
 	 */
-	@RequiresRoles({ "admin" })
+	//@RequiresRoles({ "admin" })
 	@RequestMapping(value = "/addPermissionRule", method = RequestMethod.POST)
 	public Result<SysPermissionDataRule> addPermissionRule(@RequestBody SysPermissionDataRule sysPermissionDataRule) {
 		Result<SysPermissionDataRule> result = new Result<SysPermissionDataRule>();
@@ -698,7 +730,7 @@ public class SysPermissionController {
 		return result;
 	}
 
-	@RequiresRoles({ "admin" })
+	//@RequiresRoles({ "admin" })
 	@RequestMapping(value = "/editPermissionRule", method = { RequestMethod.PUT, RequestMethod.POST })
 	public Result<SysPermissionDataRule> editPermissionRule(@RequestBody SysPermissionDataRule sysPermissionDataRule) {
 		Result<SysPermissionDataRule> result = new Result<SysPermissionDataRule>();
@@ -718,7 +750,7 @@ public class SysPermissionController {
 	 * @param id
 	 * @return
 	 */
-	@RequiresRoles({ "admin" })
+	//@RequiresRoles({ "admin" })
 	@RequestMapping(value = "/deletePermissionRule", method = RequestMethod.DELETE)
 	public Result<SysPermissionDataRule> deletePermissionRule(@RequestParam(name = "id", required = true) String id) {
 		Result<SysPermissionDataRule> result = new Result<SysPermissionDataRule>();
@@ -776,7 +808,7 @@ public class SysPermissionController {
 	 * @return
 	 */
 	@RequestMapping(value = "/saveDepartPermission", method = RequestMethod.POST)
-	@RequiresRoles({ "admin" })
+	//@RequiresRoles({ "admin" })
 	public Result<String> saveDepartPermission(@RequestBody JSONObject json) {
 		long start = System.currentTimeMillis();
 		Result<String> result = new Result<>();

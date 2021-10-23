@@ -1,12 +1,10 @@
 package org.jeecg.modules.system.controller;
 
-import java.io.IOException;
-import java.util.*;
-
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-
+import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.authz.annotation.RequiresRoles;
 import org.jeecg.common.api.vo.Result;
@@ -16,33 +14,32 @@ import org.jeecg.common.system.query.QueryGenerator;
 import org.jeecg.common.system.util.JwtUtil;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.common.util.ImportExcelUtil;
+import org.jeecg.common.util.YouBianCodeUtil;
 import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.system.entity.SysDepart;
 import org.jeecg.modules.system.entity.SysUser;
 import org.jeecg.modules.system.model.DepartIdModel;
 import org.jeecg.modules.system.model.SysDepartTreeModel;
 import org.jeecg.modules.system.service.ISysDepartService;
-import org.jeecg.modules.system.service.ISysPositionService;
+import org.jeecg.modules.system.service.ISysUserDepartService;
 import org.jeecg.modules.system.service.ISysUserService;
-import org.jeecg.modules.system.util.FindsDepartsChildrenUtil;
 import org.jeecgframework.poi.excel.ExcelImportUtil;
 import org.jeecgframework.poi.excel.def.NormalExcelConstants;
 import org.jeecgframework.poi.excel.entity.ExportParams;
 import org.jeecgframework.poi.excel.entity.ImportParams;
 import org.jeecgframework.poi.excel.view.JeecgEntityExcelView;
-import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.util.CollectionUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.multipart.MultipartHttpServletRequest;
 import org.springframework.web.servlet.ModelAndView;
 
-import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-
-import lombok.extern.slf4j.Slf4j;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.util.*;
 
 /**
  * <p>
@@ -62,6 +59,8 @@ public class SysDepartController {
 	public RedisTemplate<String, Object> redisTemplate;
 	@Autowired
 	private ISysUserService sysUserService;
+	@Autowired
+	private ISysUserDepartService sysUserDepartService;
 	/**
 	 * 查询数据 查出我的部门,并以树结构数据格式响应给前端
 	 *
@@ -73,8 +72,13 @@ public class SysDepartController {
 		LoginUser user = (LoginUser) SecurityUtils.getSubject().getPrincipal();
 		try {
 			if(oConvertUtils.isNotEmpty(user.getUserIdentity()) && user.getUserIdentity().equals( CommonConstant.USER_IDENTITY_2 )){
-				List<SysDepartTreeModel> list = sysDepartService.queryMyDeptTreeList(user.getDepartIds());
-				result.setResult(list);
+				//update-begin--Author:liusq  Date:20210624  for:部门查询ids为空后的前端显示问题 issues/I3UD06
+				String departIds = user.getDepartIds();
+				if(StringUtils.isNotBlank(departIds)){
+					List<SysDepartTreeModel> list = sysDepartService.queryMyDeptTreeList(departIds);
+					result.setResult(list);
+				}
+				//update-end--Author:liusq  Date:20210624  for:部门查询ids为空后的前端显示问题 issues/I3UD06
 				result.setMessage(CommonConstant.USER_IDENTITY_2.toString());
 				result.setSuccess(true);
 			}else{
@@ -111,11 +115,57 @@ public class SysDepartController {
 	}
 
 	/**
+	 * 异步查询部门list
+	 *
+	 * @return
+	 */
+	@RequestMapping(value = "/queryDepartTreeSync", method = RequestMethod.GET)
+	public Result<List<SysDepartTreeModel>> queryDepartTreeSync(@RequestParam(name = "pid", required = false) String parentId) {
+		Result<List<SysDepartTreeModel>> result = new Result<>();
+		try {
+			List<SysDepartTreeModel> list = sysDepartService.queryTreeListByPid(parentId);
+			result.setResult(list);
+			result.setSuccess(true);
+		} catch (Exception e) {
+			log.error(e.getMessage(),e);
+		}
+		return result;
+	}
+
+	/**
+	 * 获取某个部门的所有父级部门的ID
+	 *
+	 * @param departId 根据departId查
+	 * @param orgCode  根据orgCode查，departId和orgCode必须有一个不为空
+	 */
+	@GetMapping("/queryAllParentId")
+	public Result queryParentIds(
+			@RequestParam(name = "departId", required = false) String departId,
+			@RequestParam(name = "orgCode", required = false) String orgCode
+	) {
+		try {
+			JSONObject data;
+			if (oConvertUtils.isNotEmpty(departId)) {
+				data = sysDepartService.queryAllParentIdByDepartId(departId);
+			} else if (oConvertUtils.isNotEmpty(orgCode)) {
+				data = sysDepartService.queryAllParentIdByOrgCode(orgCode);
+			} else {
+				return Result.error("departId 和 orgCode 不能都为空！");
+			}
+			return Result.OK(data);
+		} catch (Exception e) {
+			log.error(e.getMessage(), e);
+			return Result.error(e.getMessage());
+		}
+	}
+
+	/**
 	 * 添加新数据 添加用户新建的部门对象数据,并保存到数据库
 	 * 
 	 * @param sysDepart
 	 * @return
 	 */
+	//@RequiresRoles({"admin"})
 	@RequestMapping(value = "/add", method = RequestMethod.POST)
 	@CacheEvict(value= {CacheConstant.SYS_DEPARTS_CACHE,CacheConstant.SYS_DEPART_IDS_CACHE}, allEntries=true)
 	public Result<SysDepart> add(@RequestBody SysDepart sysDepart, HttpServletRequest request) {
@@ -141,6 +191,7 @@ public class SysDepartController {
 	 * @param sysDepart
 	 * @return
 	 */
+	//@RequiresRoles({"admin"})
 	@RequestMapping(value = "/edit", method = RequestMethod.PUT)
 	@CacheEvict(value= {CacheConstant.SYS_DEPARTS_CACHE,CacheConstant.SYS_DEPART_IDS_CACHE}, allEntries=true)
 	public Result<SysDepart> edit(@RequestBody SysDepart sysDepart, HttpServletRequest request) {
@@ -168,6 +219,7 @@ public class SysDepartController {
     * @param id
     * @return
     */
+	//@RequiresRoles({"admin"})
     @RequestMapping(value = "/delete", method = RequestMethod.DELETE)
 	@CacheEvict(value= {CacheConstant.SYS_DEPARTS_CACHE,CacheConstant.SYS_DEPART_IDS_CACHE}, allEntries=true)
    public Result<SysDepart> delete(@RequestParam(name="id",required=true) String id) {
@@ -195,6 +247,7 @@ public class SysDepartController {
 	 * @param ids
 	 * @return
 	 */
+	//@RequiresRoles({"admin"})
 	@RequestMapping(value = "/deleteBatch", method = RequestMethod.DELETE)
 	@CacheEvict(value= {CacheConstant.SYS_DEPARTS_CACHE,CacheConstant.SYS_DEPART_IDS_CACHE}, allEntries=true)
 	public Result<SysDepart> deleteBatch(@RequestParam(name = "ids", required = true) String ids) {
@@ -309,6 +362,7 @@ public class SysDepartController {
      * @param response
      * @return
      */
+    //@RequiresRoles({"admin"})
     @RequestMapping(value = "/importExcel", method = RequestMethod.POST)
 	@CacheEvict(value= {CacheConstant.SYS_DEPARTS_CACHE,CacheConstant.SYS_DEPART_IDS_CACHE}, allEntries=true)
     public Result<?> importExcel(HttpServletRequest request, HttpServletResponse response) {
@@ -324,7 +378,7 @@ public class SysDepartController {
             params.setNeedSave(true);
             try {
             	// orgCode编码长度
-            	int codeLength = 3;
+            	int codeLength = YouBianCodeUtil.zhanweiLength;
                 listSysDeparts = ExcelImportUtil.importExcel(file.getInputStream(), SysDepart.class, params);
                 //按长度排序
                 Collections.sort(listSysDeparts, new Comparator<SysDepart>() {
@@ -354,6 +408,9 @@ public class SysDepartController {
                 	}else{
                 		sysDepart.setParentId("");
 					}
+                    //update-begin---author:liusq   Date:20210223  for：批量导入部门以后，不能追加下一级部门 #2245------------
+					sysDepart.setOrgType(sysDepart.getOrgCode().length()/codeLength+"");
+                    //update-end---author:liusq   Date:20210223  for：批量导入部门以后，不能追加下一级部门 #2245------------
 					sysDepart.setDelFlag(CommonConstant.DEL_FLAG_0.toString());
 					ImportExcelUtil.importDateSaveOne(sysDepart, ISysDepartService.class, errorMessageList, num, CommonConstant.SQL_INDEX_UNIQ_DEPART_ORG_CODE);
 					num++;
@@ -410,7 +467,7 @@ public class SysDepartController {
 			List<SysDepartTreeModel> list = sysDepartService.queryTreeByKeyWord(keyWord);
 			//根据keyWord获取用户信息
 			LambdaQueryWrapper<SysUser> queryUser = new LambdaQueryWrapper<SysUser>();
-			queryUser.eq(SysUser::getDelFlag,0);
+			queryUser.eq(SysUser::getDelFlag,CommonConstant.DEL_FLAG_0);
 			queryUser.and(i -> i.like(SysUser::getUsername, keyWord).or().like(SysUser::getRealname, keyWord));
 			List<SysUser> sysUsers = this.sysUserService.list(queryUser);
 			map.put("userList",sysUsers);
@@ -437,6 +494,21 @@ public class SysDepartController {
 		SysDepart sysDepart = sysDepartService.getOne(query);
 		result.setSuccess(true);
 		result.setResult(sysDepart);
+		return result;
+	}
+
+	/**
+	 * 根据部门id获取用户信息
+	 *
+	 * @param id
+	 * @return
+	 */
+	@GetMapping("/getUsersByDepartId")
+	public Result<List<SysUser>> getUsersByDepartId(@RequestParam(name = "id") String id) {
+		Result<List<SysUser>> result = new Result<>();
+		List<SysUser> sysUsers = sysUserDepartService.queryUserByDepId(id);
+		result.setSuccess(true);
+		result.setResult(sysUsers);
 		return result;
 	}
 }

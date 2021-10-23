@@ -10,7 +10,9 @@
       ref="jPopupOnlReport"
       :code="code"
       :multi="multi"
+      :sorter="sorter"
       :groupId="uniqGroupId"
+      :param="param"
       @ok="callBack"
     />
 
@@ -46,6 +48,11 @@
         default: '',
         required: false
       },
+      /** 排序列，指定要排序的列，使用方式：列名=desc|asc */
+      sorter: {
+        type: String,
+        default: ''
+      },
       width: {
         type: Number,
         default: 1200,
@@ -75,6 +82,17 @@
         required: false,
         default: false
       },
+      //popup动态参数 支持系统变量语法
+      param:{
+        type: Object,
+        required: false,
+        default: ()=>{}
+      },
+      spliter:{
+        type: String,
+        required: false,
+        default: ','
+      },
       /** 分组ID，用于将多个popup的请求合并到一起，不传不分组 */
       groupId: String
 
@@ -101,7 +119,7 @@
           if (!val) {
             this.showText = ''
           } else {
-            this.showText = val
+            this.showText = val.split(this.spliter).join(',')
           }
         }
       }
@@ -155,9 +173,11 @@
             let tempDestArr = []
             for(let rw of rows){
               let val = rw[orgFieldsArr[i]]
-              if(!val){
+              // update--begin--autor:liusq-----date:20210713------for：处理val等于0的情况issues/I3ZL4T------
+              if(typeof val=='undefined'|| val==null || val.toString()==""){
                 val = ""
               }
+              // update--end--autor:liusq-----date:20210713------for：处理val等于0的情况issues/I3ZL4T------
               tempDestArr.push(val)
             }
             res[destFieldsArr[i]] = tempDestArr.join(",")
@@ -181,7 +201,11 @@
         } else {
           //v-model时 需要传一个参数field 表示当前这个字段 从而根据这个字段的顺序找到原始值
           // this.$emit("input",row[orgFieldsArr[destFieldsArr.indexOf(this.field)]])
-          this.$emit('input', this.showText, res)
+          let str = ''
+          if(this.showText){
+            str = this.showText.split(',').join(this.spliter)
+          }
+          this.$emit('input', str, res)
         }
       }
     }

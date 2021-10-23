@@ -12,12 +12,12 @@
 
     <a-upload
       name="file"
-      :multiple="true"
+      :multiple="multiple"
       :action="uploadAction"
       :headers="headers"
       :data="{'biz':bizPath}"
       :fileList="fileList"
-      :beforeUpload="beforeUpload"
+      :beforeUpload="doBeforeUpload"
       @change="handleChange"
       :disabled="disabled"
       :returnUrl="returnUrl"
@@ -135,6 +135,13 @@
         required:false,
         default: true
       },
+      multiple: {
+        type: Boolean,
+        default: true
+      },
+      beforeUpload: {
+        type: Function
+      },
     },
     watch:{
       value:{
@@ -238,7 +245,7 @@
         }
         this.$emit('change', path);
       },
-      beforeUpload(file){
+      doBeforeUpload(file){
         this.uploadGoOn=true
         var fileType = file.type;
         if(this.fileType===FILE_TYPE_IMG){
@@ -248,7 +255,10 @@
             return false;
           }
         }
-        //TODO 扩展功能验证文件大小
+        // 扩展 beforeUpload 验证
+        if (typeof this.beforeUpload === 'function') {
+          return this.beforeUpload(file)
+        }
         return true
       },
       handleChange(info) {
@@ -374,14 +384,17 @@
     },
     mounted(){
       const moverObj = document.getElementById(this.containerId+'-mover');
-      moverObj.addEventListener('mouseover',()=>{
-        this.moverHold = true
-        this.moveDisplay = 'block';
-      });
-      moverObj.addEventListener('mouseout',()=>{
-        this.moverHold = false
-        this.moveDisplay = 'none';
-      });
+      if(moverObj){
+        moverObj.addEventListener('mouseover',()=>{
+          this.moverHold = true
+          this.moveDisplay = 'block';
+        });
+        moverObj.addEventListener('mouseout',()=>{
+          this.moverHold = false
+          this.moveDisplay = 'none';
+        });
+      }
+    
       let picList = document.getElementById(this.containerId)?document.getElementById(this.containerId).getElementsByClassName('ant-upload-list-picture-card'):[];
       if(picList && picList.length>0){
         picList[0].addEventListener('mouseover',(ev)=>{

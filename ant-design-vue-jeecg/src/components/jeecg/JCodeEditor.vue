@@ -251,6 +251,9 @@
           },
           style: {}
         }
+        if(isIE() || isIE11()){
+          props.style['height'] = '240px'
+        }
         if (this.fullCoder) {
           props.style['z-index'] = this.zIndex
         }
@@ -396,6 +399,10 @@
     }
     .null-tip-hidden{
       display: none;
+    }
+    /**选中样式偶然出现高度不够的情况*/
+    .CodeMirror-selected{
+      min-height: 19px !important;
     }
   }
 

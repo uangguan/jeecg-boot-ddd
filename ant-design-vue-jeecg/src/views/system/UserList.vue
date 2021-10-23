@@ -17,8 +17,8 @@
             <a-form-item label="性别">
               <a-select v-model="queryParam.sex" placeholder="请选择性别">
                 <a-select-option value="">请选择</a-select-option>
-                <a-select-option value="1">男性</a-select-option>
-                <a-select-option value="2">女性</a-select-option>
+                <a-select-option value="1">男</a-select-option>
+                <a-select-option value="2">女</a-select-option>
               </a-select>
             </a-form-item>
           </a-col>
@@ -65,11 +65,12 @@
 
     <!-- 操作按钮区域 -->
     <div class="table-operator" style="border-top: 5px">
-      <a-button @click="handleAdd" type="primary" icon="plus">添加用户</a-button>
+      <a-button @click="handleAdd" type="primary" icon="plus" >添加用户</a-button>
       <a-button type="primary" icon="download" @click="handleExportXls('用户信息')">导出</a-button>
       <a-upload name="file" :showUploadList="false" :multiple="false" :headers="tokenHeader" :action="importExcelUrl" @change="handleImportExcel">
         <a-button type="primary" icon="import">导入</a-button>
       </a-upload>
+      <j-third-app-button biz-type="user" :selected-row-keys="selectedRowKeys" syncToApp syncToLocal @sync-finally="onSyncFinally"/>
       <a-button type="primary" icon="hdd" @click="recycleBinVisible=true">回收站</a-button>
       <a-dropdown v-if="selectedRowKeys.length > 0">
         <a-menu slot="overlay" @click="handleMenuClick">
@@ -91,6 +92,7 @@
           <a-icon type="down"/>
         </a-button>
       </a-dropdown>
+      <j-super-query :fieldList="superQueryFieldList" @handleSuperQuery="handleSuperQuery"/>
     </div>
 
     <!-- table区域-begin -->
@@ -188,16 +190,20 @@
   import SysUserAgentModal from "./modules/SysUserAgentModal";
   import JInput from '@/components/jeecg/JInput'
   import UserRecycleBinModal from './modules/UserRecycleBinModal'
+  import JSuperQuery from '@/components/jeecg/JSuperQuery'
+  import JThirdAppButton from '@/components/jeecgbiz/thirdApp/JThirdAppButton'
 
   export default {
     name: "UserList",
     mixins: [JeecgListMixin],
     components: {
+      JThirdAppButton,
       SysUserAgentModal,
       UserModal,
       PasswordModal,
       JInput,
-      UserRecycleBinModal
+      UserRecycleBinModal,
+      JSuperQuery
     },
     data() {
       return {
@@ -262,6 +268,12 @@
             dataIndex: 'orgCodeTxt'
           },
           {
+            title: '负责部门',
+            align: "center",
+            width: 180,
+            dataIndex: 'departIds_dictText'
+          },
+          {
             title: '状态',
             align: "center",
             width: 80,
@@ -276,8 +288,13 @@
           }
 
         ],
+        superQueryFieldList: [
+          { type: 'input', value: 'username', text: '用户账号', },
+          { type: 'input', value: 'realname', text: '用户姓名', },
+          { type: 'select', value: 'sex', dbType: 'int', text: '性别', dictCode: 'sex' },
+        ],
         url: {
-          syncUser: "/process/extActProcess/doSyncUser",
+          syncUser: "/act/process/extActProcess/doSyncUser",
           list: "/sys/user/list",
           delete: "/sys/user/delete",
           deleteBatch: "/sys/user/deleteBatch",
@@ -367,7 +384,13 @@
       },
       passwordModalOk() {
         //TODO 密码修改完成 不需要刷新页面，可以把datasource中的数据更新一下
-      }
+      },
+      onSyncFinally({isToLocal}) {
+        // 同步到本地时刷新下数据
+        if (isToLocal) {
+          this.loadData()
+        }
+      },
     }
 
   }
